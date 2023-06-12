@@ -33,7 +33,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * HierarchicalWheelTimer
  * The type Hierarchical Wheel timer.
  *
- * @see TimingWheel
+ * @see <a href="https://learn.lianglianglee.com/%E4%B8%93%E6%A0%8F/Kafka%E6%A0%B8%E5%BF%83%E6%BA%90%E7%A0%81%E8%A7%A3%E8%AF%BB/20%20DelayedOperation%EF%BC%9ABroker%E6%98%AF%E6%80%8E%E4%B9%88%E5%BB%B6%E6%97%B6%E5%A4%84%E7%90%86%E8%AF%B7%E6%B1%82%E7%9A%84%EF%BC%9F.md">参考kafka时间轮算法</a>
  */
 public class HierarchicalWheelTimer implements Timer {
     
@@ -101,7 +101,13 @@ public class HierarchicalWheelTimer implements Timer {
         }
         
     }
-    
+
+    /**
+     * 1、任务状态为未取消与未过期，则添加时间轮
+     * 2、任务取消，则忽略
+     * 3、任务已过期，则直接提交到线程池，等待执行
+     * @param timerTaskEntry 任务实体
+     */
     private void addTimerTaskEntry(final TimerTaskList.TimerTaskEntry timerTaskEntry) {
         if (!timingWheel.add(timerTaskEntry)) {
             if (!timerTaskEntry.cancelled()) {
@@ -109,7 +115,12 @@ public class HierarchicalWheelTimer implements Timer {
             }
         }
     }
-    
+
+    /**
+     *
+     * @param timeoutMs the timeout ms
+     * @throws InterruptedException 中断异常
+     */
     @Override
     public void advanceClock(final long timeoutMs) throws InterruptedException {
         TimerTaskList bucket = delayQueue.poll(timeoutMs, TimeUnit.MILLISECONDS);
@@ -118,6 +129,7 @@ public class HierarchicalWheelTimer implements Timer {
             try {
                 while (bucket != null) {
                     timingWheel.advanceClock(bucket.getExpiration());
+                    // 高层次时间轮写至低层次时间轮中，递归计算各层次的currentTime，用以判断任务是否超时，如果超时则开始执行任务
                     bucket.flush(this::addTimerTaskEntry);
                     bucket = delayQueue.poll();
                 }
